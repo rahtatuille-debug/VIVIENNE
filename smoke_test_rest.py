@@ -12,7 +12,7 @@ import urllib.request
 key = os.getenv("GEMINI_API_KEY")
 if not key:
     sys.exit("FAIL: set GEMINI_API_KEY first, e.g. GEMINI_API_KEY=abc python3 smoke_test_rest.py")
-model = os.getenv("VIVIENNE_MODEL", "gemini-2.5-flash")
+model = os.getenv("VIVIENNE_MODEL", "gemini-3.8-flash")
 
 req = urllib.request.Request(
     f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
@@ -20,7 +20,7 @@ req = urllib.request.Request(
     headers={"Content-Type": "application/json", "x-goog-api-key": key},
 )
 try:
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=25) as resp:
         body = json.load(resp)
 except urllib.error.HTTPError as e:
     sys.exit(f"FAIL: HTTP {e.code}: {e.read().decode()[:300]}")

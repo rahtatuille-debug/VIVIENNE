@@ -6,7 +6,15 @@ from google import genai
 from google.genai import errors, types
 
 load_dotenv()
-MODEL = os.getenv("VIVIENNE_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("VIVIENNE_MODEL", "gemini-3.8-flash")
+
+# Give up on a request after 20 seconds, and retry once if it times out or Google is overloaded.
+HTTP_OPTIONS = types.HttpOptions(
+    timeout=20_000,
+    retry_options=types.HttpRetryOptions(
+        attempts=2, initial_delay=2.0, max_delay=8.0, http_status_codes=[500, 502, 503, 504]
+    ),
+)
 
 SYSTEM_PROMPT = (
     "You are Vivienne, a concise, composed personal assistant with dry wit. "
@@ -31,7 +39,7 @@ def init_brain(tools):
         raise BrainSetupError(
             "GEMINI_API_KEY is missing. Run: cp .env.example .env  then paste your key into .env"
         )
-    _client = genai.Client()  # reads GEMINI_API_KEY from the environment
+    _client = genai.Client(http_options=HTTP_OPTIONS)  # reads GEMINI_API_KEY
     _chat = _client.chats.create(
         model=MODEL,
         config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, tools=tools),
@@ -50,6 +58,8 @@ def ask_brain(text: str) -> str:
             return "I've hit the free-tier rate limit. Give me a minute."
         if e.code == 404:
             return f"Google doesn't recognise the model '{MODEL}'. Update VIVIENNE_MODEL in .env."
+        if e.code in (500, 502, 503, 504):
+            return "Google's servers are busy right now. Try again in a minute."
         if "API key" in msg:
             return "Google rejected my API key. Check GEMINI_API_KEY in .env."
         return f"Gemini returned an error ({e.code}): {msg[:200]}"
@@ -57,6 +67,9 @@ def ask_brain(text: str) -> str:
         text_err = str(e)
         if "CERTIFICATE_VERIFY_FAILED" in text_err:
             return "My SSL certificates are broken, so I can't reach Google."
-        if any(w in type(e).__name__ for w in ("Connect", "Timeout", "Network")):
+        name = type(e).__name__
+        if "Connect" in name or "Network" in name:
             return "I can't reach the internet right now. Check your Wi-Fi."
+        if "Timeout" in name:
+            return "Gemini took too long to answer. Try again."
         return f"I couldn't reach my brain: {text_err[:200]}"

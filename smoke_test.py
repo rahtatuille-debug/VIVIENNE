@@ -24,7 +24,7 @@ def main():
     try:
         from dotenv import load_dotenv
         from google import genai
-        from google.genai import errors
+        from google.genai import errors, types
     except ImportError as e:
         sys.exit(f"FAIL: {e}\nFix: pip uninstall -y google-generativeai && "
                  "pip install --prefer-binary -r requirements.txt")
@@ -32,10 +32,10 @@ def main():
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
         sys.exit("FAIL: GEMINI_API_KEY missing. Run: cp .env.example .env  then paste your key.")
-    model = os.getenv("VIVIENNE_MODEL", "gemini-2.5-flash")
+    model = os.getenv("VIVIENNE_MODEL", "gemini-3.8-flash")
 
     try:
-        client = genai.Client()  # reads GEMINI_API_KEY from the environment
+        client = genai.Client(http_options=types.HttpOptions(timeout=25_000))  # reads GEMINI_API_KEY
         r = client.models.generate_content(model=model, contents="Say hello in five words.")
     except errors.APIError as e:
         msg = str(e.message or e)
@@ -44,6 +44,8 @@ def main():
         if e.code == 404:
             sys.exit(f"FAIL: model '{model}' not found. Copy the current Flash model name "
                      "from aistudio.google.com into VIVIENNE_MODEL in .env.")
+        if e.code in (500, 502, 503, 504):
+            sys.exit("FAIL: Google's servers are overloaded right now (not your fault). Retry in a few minutes.")
         if "API key" in msg or e.code in (401, 403):
             sys.exit("FAIL: Google rejected your API key. Recreate it at "
                      "aistudio.google.com/apikey and update .env.")

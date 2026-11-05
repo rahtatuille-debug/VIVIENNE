@@ -32,7 +32,7 @@ def main():
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
         sys.exit("FAIL: GEMINI_API_KEY missing. Run: cp .env.example .env  then paste your key.")
-    model = os.getenv("JARVIS_MODEL", "gemini-2.5-flash")
+    model = os.getenv("VIVIENNE_MODEL", "gemini-2.5-flash")
 
     try:
         client = genai.Client()  # reads GEMINI_API_KEY from the environment
@@ -43,7 +43,7 @@ def main():
             sys.exit("FAIL: 429 free-tier rate limit. Wait a minute and retry.")
         if e.code == 404:
             sys.exit(f"FAIL: model '{model}' not found. Copy the current Flash model name "
-                     "from aistudio.google.com into JARVIS_MODEL in .env.")
+                     "from aistudio.google.com into VIVIENNE_MODEL in .env.")
         if "API key" in msg or e.code in (401, 403):
             sys.exit("FAIL: Google rejected your API key. Recreate it at "
                      "aistudio.google.com/apikey and update .env.")

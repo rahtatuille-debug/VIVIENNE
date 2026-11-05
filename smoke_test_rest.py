@@ -12,7 +12,7 @@ import urllib.request
 key = os.getenv("GEMINI_API_KEY")
 if not key:
     sys.exit("FAIL: set GEMINI_API_KEY first, e.g. GEMINI_API_KEY=abc python3 smoke_test_rest.py")
-model = os.getenv("JARVIS_MODEL", "gemini-2.5-flash")
+model = os.getenv("VIVIENNE_MODEL", "gemini-2.5-flash")
 
 req = urllib.request.Request(
     f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",

@@ -32,34 +32,47 @@ def main():
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
         sys.exit("FAIL: GEMINI_API_KEY missing. Run: cp .env.example .env  then paste your key.")
-    model = os.getenv("VIVIENNE_MODEL", "gemini-3.5-flash").split(",")[0].strip()
+    default = "gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash,gemini-3.5-flash-lite"
+    models = [m.strip() for m in os.getenv("VIVIENNE_MODEL", default).split(",") if m.strip()]
+    client = genai.Client(http_options=types.HttpOptions(
+        timeout=12_000, retry_options=types.HttpRetryOptions(attempts=1)))  # reads GEMINI_API_KEY
 
-    try:
-        client = genai.Client(http_options=types.HttpOptions(timeout=25_000))  # reads GEMINI_API_KEY
-        r = client.models.generate_content(model=model, contents="Say hello in five words.")
-    except errors.APIError as e:
-        msg = str(e.message or e)
-        if e.code == 429:
-            sys.exit("FAIL: 429 free-tier rate limit. Wait a minute and retry.")
-        if e.code == 404:
-            sys.exit(f"FAIL: model '{model}' not found. Copy the current Flash model name "
-                     "from aistudio.google.com into VIVIENNE_MODEL in .env.")
-        if e.code in (500, 502, 503, 504):
-            sys.exit("FAIL: Google's servers are overloaded right now (not your fault). Retry in a few minutes.")
-        if "API key" in msg or e.code in (401, 403):
-            sys.exit("FAIL: Google rejected your API key. Recreate it at "
-                     "aistudio.google.com/apikey and update .env.")
-        sys.exit(f"FAIL: Gemini error {e.code}: {msg[:300]}")
-    except Exception as e:
-        text = str(e)
-        if "CERTIFICATE_VERIFY_FAILED" in text:
-            sys.exit("FAIL: SSL certificates missing. Run the 'Install Certificates.command' "
-                     "file in your /Applications/Python 3.x/ folder, then retry.")
-        sys.exit(f"FAIL: {type(e).__name__}: {text[:300]}\nAre you online?")
+    # Try each model in turn, the same way Vivienne does. One working model is a pass.
+    failures = []
+    for model in models:
+        try:
+            r = client.models.generate_content(model=model, contents="Say hello in five words.")
+        except errors.APIError as e:
+            msg = str(e.message or e)
+            if "API key" in msg or e.code in (401, 403):
+                sys.exit("FAIL: Google rejected your API key. Recreate it at "
+                         "aistudio.google.com/apikey and update .env.")
+            reason = {404: "doesn't exist", 429: "free-tier limit reached"}.get(
+                e.code, "busy" if e.code in (500, 502, 503, 504) else f"error {e.code}")
+            print(f"  {model}: {reason}")
+            failures.append(reason)
+            continue
+        except Exception as e:
+            text = str(e)
+            if "CERTIFICATE_VERIFY_FAILED" in text:
+                sys.exit("FAIL: SSL certificates missing. Run the 'Install Certificates.command' "
+                         "file in your /Applications/Python 3.x/ folder, then retry.")
+            if "Timeout" in type(e).__name__:
+                print(f"  {model}: too slow")
+                failures.append("too slow")
+                continue
+            sys.exit(f"FAIL: {type(e).__name__}: {text[:300]}\nAre you online?")
+        print(f"Model  : {model}")
+        print(f"Gemini : {(r.text or '').strip()}")
+        print("PASS")
+        return
 
-    print(f"Model  : {model}")
-    print(f"Gemini : {(r.text or '').strip()}")
-    print("PASS")
+    if failures and all(f == "doesn't exist" for f in failures):
+        sys.exit("FAIL: none of the models in VIVIENNE_MODEL exist. Copy current Flash model "
+                 "names from aistudio.google.com into .env.")
+    if "free-tier limit reached" in failures:
+        sys.exit("FAIL: every model is busy or at its free-tier limit. Retry later.")
+    sys.exit("FAIL: Google's servers are overloaded right now (not your fault). Retry in a few minutes.")
 
 
 if __name__ == "__main__":

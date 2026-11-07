@@ -82,26 +82,51 @@ def ask_brain(text: str) -> str:
     # a reply doesn't leave a half-finished turn for the next model.
     # list() makes a real copy; without it the failing chat keeps writing into it.
     history_before = list(_chat.get_history(curated=True))
-    start = _model_index
-    last_error = None
+    started_on = MODELS[_model_index]
+    # Each model once, starting with the one in use: e.g. [B, C, A] if B is current.
+    order = MODELS[_model_index:] + MODELS[:_model_index]
+    failures = []
 
-    for step in range(len(MODELS)):
-        index = (start + step) % len(MODELS)
-        if step > 0:
-            previous = MODELS[(start + step - 1) % len(MODELS)]
-            print(f"  ({previous} unavailable, trying {MODELS[index]})", file=sys.stderr)
-            _start_chat(index, history=history_before)
+    for i, model in enumerate(order):
+        if i > 0:
+            if order[i - 1] in MODELS:  # a dropped model already said why
+                print(f"  ({order[i - 1]} unavailable, trying {model})", file=sys.stderr)
+            _start_chat(MODELS.index(model), history=history_before)
         try:
             return _chat.send_message(text).text or "I have nothing to say to that."
         except Exception as e:
-            last_error = e
+            failures.append(e)
+            if _is_missing_model(e) and len(MODELS) > 1:
+                # Retired or misspelt: stop trying it for the rest of this session.
+                MODELS.remove(model)
+                print(f"  ({model} doesn't exist, skipping it from now on)", file=sys.stderr)
             if not _can_fall_back(e):
                 break
 
     # Every model failed (or the error wasn't one another model could fix).
-    # Go back to the first model with the clean conversation for next time.
-    _start_chat(start, history=history_before)
-    return _explain(last_error)
+    # Next message starts again from the same model, with the clean conversation.
+    back_to = MODELS.index(started_on) if started_on in MODELS else 0
+    _start_chat(back_to, history=history_before)
+    return _explain(_most_useful(failures))
+
+
+def _is_missing_model(error) -> bool:
+    return isinstance(error, errors.APIError) and error.code == 404
+
+
+def _most_useful(failures):
+    """Pick the error that best explains what went wrong.
+
+    A wrong key beats "busy", which beats "too slow", which beats "doesn't exist".
+    Otherwise one misspelt model name would hide that Google is just busy.
+    """
+    def rank(error):
+        if not _can_fall_back(error):
+            return 0  # e.g. a wrong key: the real problem, whatever else happened
+        if isinstance(error, errors.APIError):
+            return {429: 1, 404: 4}.get(error.code, 2)
+        return 3  # timeout
+    return min(failures, key=rank)
 
 
 def _explain(error) -> str:
@@ -111,7 +136,7 @@ def _explain(error) -> str:
         if error.code == 429 or "RESOURCE_EXHAUSTED" in msg:
             return "I've hit the free-tier limit on all my models. Give me a minute."
         if error.code == 404:
-            return f"Google doesn't recognise my models ({', '.join(MODELS)}). Update VIVIENNE_MODEL in .env."
+            return "Google doesn't recognise my model names. Update VIVIENNE_MODEL in .env."
         if error.code in (500, 502, 503, 504):
             return "Google's servers are busy right now. Try again in a minute."
         if "API key" in msg:

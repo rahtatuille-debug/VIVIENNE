@@ -32,7 +32,7 @@ def main():
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
         sys.exit("FAIL: GEMINI_API_KEY missing. Run: cp .env.example .env  then paste your key.")
-    model = os.getenv("VIVIENNE_MODEL", "gemini-3.5-flash")
+    model = os.getenv("VIVIENNE_MODEL", "gemini-3.5-flash").split(",")[0].strip()
 
     try:
         client = genai.Client(http_options=types.HttpOptions(timeout=25_000))  # reads GEMINI_API_KEY

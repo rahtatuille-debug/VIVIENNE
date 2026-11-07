@@ -6,7 +6,7 @@ from google import genai
 from google.genai import errors, types
 
 load_dotenv()
-MODEL = os.getenv("VIVIENNE_MODEL", "gemini-3.8-flash")
+MODEL = os.getenv("VIVIENNE_MODEL", "gemini-3.5-flash")
 
 # Give up on a request after 20 seconds, and retry once if it times out or Google is overloaded.
 HTTP_OPTIONS = types.HttpOptions(
